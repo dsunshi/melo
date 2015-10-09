@@ -26,21 +26,12 @@
 /******************************************************************************
 *                              Local Data Types                               *
 ******************************************************************************/
-
-#define _STATE_ACTION_ENTRY  ((uint8_t) 0u)
-#define _STATE_ACTION_DURING ((uint8_t) 1u)
-#define _STATE_ACTION_EXIT   ((uint8_t) 2u)
-#define _AFTER(x) x
-
-typedef uint16_t (*_state_func)(const uint8_t action, const uint8_t event);
-
-typedef struct
-{
-	_state_func  function;
-    uint8_t left;
-    uint8_t right;
-    uint16_t timer;
-} _state_handle;
+/*[[[cog
+import cog
+cog.outl("<%def name=\"build_func_name(x)\"><%return defaults['state_prefix'] + x + defaults['state_suffix']%></%def>")
+cog.outl("<%include file=\"templates/types.tpl\" />")
+]]]*/
+/*[[[end]]]*/
 
 /******************************************************************************
 *                          Local Function Prototypes                          *
@@ -58,33 +49,22 @@ static void     _melo_serialize_frame(_m_frame_buffer * const frame_buffer);
 static uint8_t  _melo_service_handler(const _m_packet * const packet);
 static void     _notify_event(const uint8_t event);
 static bool     _service_read_write(const _m_packet * const request, _m_packet * const response);
+static bool     _service_NULL(const _m_packet * const request, _m_packet * const response);
 
+/*[[[cog
+import cog
+cog.outl("<%include file=\"templates/prototypes.tpl\" />")
+]]]*/
+/*[[[end]]]*/
 
-
-/* States */
-static uint16_t _IDLE_(const uint8_t action, const uint8_t event);
-static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event);
-static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event);
-static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event);
-
-/* Builtin Functions */
-bool _is_parent(const _state_handle * const child, const _state_handle * const parent);
-uint16_t _state_transition(uint16_t start_state, uint16_t dest_state);
 /******************************************************************************
 *                               Local Variables                               *
 ******************************************************************************/
-
-
-static _state_handle _table[4] =
-{
-    /* State Name, Left, Right, Timer */
-    /* 0 */ {_IDLE_, 1, 2, 0},
-    /* 1 */ {_RESP_PROC_, 3, 8, 0},
-    /* 2 */ {_RESP_PEND_, 4, 5, 0},
-    /* 3 */ {_TX_PEND_, 6, 7, 0},
-};
-
-static uint16_t _current_state = 0;
+/*[[[cog
+import cog
+cog.outl("<%include file=\"templates/variables.tpl\" />")
+]]]*/
+/*[[[end]]]*/
 
 static uint8_t recv_frame_buffer[MELO_MAX_FRAME_SIZE]        = {0};
 static uint8_t send_frame_buffer[MELO_MAX_FRAME_SIZE]        = {0};
@@ -101,22 +81,18 @@ static _m_frame_buffer recv_frame;
 static uint8_t  _m_event_stack_data[MELO_CFG_MAX_STACK_SIZE] = {0};
 static MeloList _m_event_stack;
 
-static bool _NULL_SERVICE(const _m_packet * const request, _m_packet * const response)
-{
-  return false;
-}
-
 static const _m_service service_table[8] =
 {
     /* 0 */ _service_read_write,
-    /* 1 */ _NULL_SERVICE,
-    /* 2 */ _NULL_SERVICE,
-    /* 3 */ _NULL_SERVICE,
-    /* 4 */ _NULL_SERVICE,
-    /* 5 */ _NULL_SERVICE,
-    /* 6 */ _NULL_SERVICE,
-    /* 7 */ _NULL_SERVICE,
+    /* 1 */ _service_NULL,
+    /* 2 */ _service_NULL,
+    /* 3 */ _service_NULL,
+    /* 4 */ _service_NULL,
+    /* 5 */ _service_NULL,
+    /* 6 */ _service_NULL,
+    /* 7 */ _service_NULL,
 };
+
 /******************************************************************************
 *                        Exported Function Definitions                        *
 ******************************************************************************/
@@ -216,6 +192,11 @@ void MeloBackground(void)
 /******************************************************************************
 *                          Local Function Definitions                         *
 ******************************************************************************/
+static bool _service_NULL(const _m_packet * const request, _m_packet * const response)
+{
+    return false;
+}
+
 static void _notify_event(const uint8_t event)
 {
     if (_m_event_stack.length == (_m_event_stack.size - 1))
@@ -559,23 +540,15 @@ static uint8_t _melo_service_handler(const _m_packet * const packet)
     /* Process request */
     send_frame.frame.packet.command.raw_byte = packet->command.raw_byte;
 
-    if (service_table[packet->command.fields.service] == NULL)
+    success = service_table[packet->command.fields.service](packet, &(send_frame.frame.packet));
+
+    if (success != false)
     {
-        /* Error - Service not supported */
-        send_frame.frame.packet.command.fields.status = MELO_CMD_NEGATIVE_RESPONSE;
+        send_frame.frame.packet.command.fields.status = MELO_CMD_POSITIVE_RESPONSE;
     }
     else
     {
-        success = service_table[packet->command.fields.service](packet, &(send_frame.frame.packet));
-
-        if (success != false)
-        {
-            send_frame.frame.packet.command.fields.status = MELO_CMD_POSITIVE_RESPONSE;
-        }
-        else
-        {
-            send_frame.frame.packet.command.fields.status = MELO_CMD_NEGATIVE_RESPONSE;
-        }
+        send_frame.frame.packet.command.fields.status = MELO_CMD_NEGATIVE_RESPONSE;
     }
 
     /* TODO: send_frame CRC */
@@ -647,188 +620,10 @@ static void _melo_frame_handler(const _m_frame * const frame, const bool crc_pre
     }
 }
 
-bool _is_parent(const _state_handle * const child, const _state_handle * const parent)
-{
-    bool result = 0;
-    
-    if ( (parent->left < child->left) && (parent->right > child->right) )
-    {
-        result = true;
-    }
-    else
-    {
-        result = false;
-    }
-    
-    return result;
-}
-
-uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
-{
-    uint16_t index;
-    
-    /* Exit start_state */
-    (void) _table[start_state].function(_STATE_ACTION_EXIT, 0);
-    
-    for (index = start_state; index > 0; index--)
-    {
-        if (_is_parent( &(_table[start_state]), &(_table[index]) ) != false)
-        {
-            if (_is_parent( &(_table[dest_state]), &(_table[index]) ) == false)
-            {
-                (void) _table[index].function(_STATE_ACTION_EXIT, 0);
-            }
-            else
-            {
-                /* Do nothing - we are not actually exiting the parent state - only "touching" it */
-            }
-        }
-        else
-        {
-            /* Do nothing - not a parent state */
-        }
-    }
-    
-    for (index++; index <= dest_state; index++)
-    {
-        if (_is_parent( &(_table[dest_state]), &(_table[index]) ) != false)
-        {
-            if (_is_parent( &(_table[start_state]), &(_table[index]) ) == false)
-            {
-                (void) _table[index].function(_STATE_ACTION_ENTRY, 0);
-            }
-            else
-            {
-                /* Do nothing - we are not actually exiting the parent state - only "touching" it */
-            }
-        }
-        else
-        {
-            /* Do nothing - not a parent state */
-        }
-    }
-    
-    /* Enter dest_state */
-    (void) _table[dest_state].function(_STATE_ACTION_ENTRY, 0);
-    
-    return dest_state;
-}
-
-
-
-
-
-/* State IDLE */
-static uint16_t _IDLE_(const uint8_t action, const uint8_t event)
-{
-    uint16_t result = 0;
-    
-    if (action == _STATE_ACTION_ENTRY)
-    {
-    }
-    else if (action == _STATE_ACTION_DURING)
-    {
-        if (event == MELO_EVENT_REQUEST_RECEIVED)
-        {
-            result = _state_transition(0, 2);
-        }
-    }
-    else if (action == _STATE_ACTION_EXIT)
-    {
-    }
-    else
-    {
-        /* Error - ??? */
-    }
-    
-    return result;
-}
-/* State RESP_PROC */
-static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event)
-{
-    uint16_t result = 1;
-    
-    if (action == _STATE_ACTION_ENTRY)
-    {
-        _table[1].timer = 0;
-        _melo_frame_handler(&(recv_frame.frame), false);
-    }
-    else if (action == _STATE_ACTION_DURING)
-    {
-        _table[1].timer++;
-        if (_table[1].timer > _AFTER(500))
-        {
-            result = _state_transition(1, 0);
-        }
-    }
-    else if (action == _STATE_ACTION_EXIT)
-    {
-    }
-    else
-    {
-        /* Error - ??? */
-    }
-    
-    return result;
-}
-/* State RESP_PEND */
-static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event)
-{
-    uint16_t result = 2;
-    
-    if (action == _STATE_ACTION_ENTRY)
-    {
-        MeloTransmitBytes( &(wait_frame.buffer.data[0]), wait_frame.buffer.length );
-    }
-    else if (action == _STATE_ACTION_DURING)
-    {
-        (void) _table[1].function(_STATE_ACTION_DURING, event);
-        if (event == MELO_EVENT_REQUEST_RECEIVED)
-        {
-        }
-        if (event == MELO_EVNET_TX_CONFIRMATION)
-        {
-            result = _state_transition(2, 3);
-        }
-    }
-    else if (action == _STATE_ACTION_EXIT)
-    {
-    }
-    else
-    {
-        /* Error - ??? */
-    }
-    
-    return result;
-}
-/* State TX_PEND */
-static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event)
-{
-    uint16_t result = 3;
-    
-    if (action == _STATE_ACTION_ENTRY)
-    {
-        MeloTransmitBytes( &(send_frame.buffer.data[0]), send_frame.buffer.length );
-    }
-    else if (action == _STATE_ACTION_DURING)
-    {
-        (void) _table[1].function(_STATE_ACTION_DURING, event);
-        if (event == MELO_EVENT_REQUEST_RECEIVED)
-        {
-        }
-        if (event == MELO_EVNET_TX_CONFIRMATION)
-        {
-            result = _state_transition(3, 0);
-        }
-    }
-    else if (action == _STATE_ACTION_EXIT)
-    {
-    }
-    else
-    {
-        /* Error - ??? */
-    }
-    
-    return result;
-}
-
+/*[[[cog
+import cog
+cog.outl("<%include file=\"templates/builtins.tpl\" />")
+cog.outl("")
+cog.outl("<%include file=\"templates/states.tpl\" />")
+]]]*/
+/*[[[end]]]*/
