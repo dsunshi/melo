@@ -18,6 +18,10 @@
 #
 
 import yaml
+import sys
+import getopt
+import inspect
+import os
 from mako.template import Template
 from mako.lookup import TemplateLookup
 
@@ -132,11 +136,30 @@ states = [
 #for key, value in yaml.load(open('airy.yml')).iteritems():
 #    print key, value
 
+def main(argv):
+    inputfile  = ''
+    outputfile = ''
+    try:
+        opts, args = getopt.getopt(argv,"hi:o:",["ifile=","ofile="])
+    except getopt.GetoptError:
+        print 'airy.py -i <inputfile> -o <outputfile>'
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h':
+            print 'airy.py -i <inputfile> -o <outputfile>'
+            sys.exit()
+        elif opt in ("-i", "--ifile"):
+            inputfile = arg
+        elif opt in ("-o", "--ofile"):
+            outputfile = arg
+    print 'Input file is "', inputfile
+    print 'Output file is "', outputfile
+    
+    lookup = TemplateLookup(directories=[ os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) ])
+    template_file = Template(filename=inputfile, lookup=lookup)
+    f = open(outputfile, "w")
+    f.write(template_file.render(states=states, defaults=defaults))
+    f.close()
 
-
-
-lookup = TemplateLookup(directories=['.'])
-template_file = Template(filename='melo.ac', lookup=lookup)
-f = open('melo.c', "w")
-f.write(template_file.render(states=states, defaults=defaults))
-f.close()
+if __name__ == "__main__":
+    main( sys.argv[1:] )
