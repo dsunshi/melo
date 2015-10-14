@@ -43,117 +43,30 @@ defaults = dict(
     static        = 'static'
 )
 
-states = [
-    dict(
-        name   = 'IDLE',
-        id     = 0,
-        left   = 1,
-        right  = 2,
-        entry  = '',
-        during = '',
-        exit   = '',
-        timer  = False,
-        parent = 0,
-        transitions = [
-            dict(
-                gaurd  = 'event == MELO_EVENT_REQUEST_RECEIVED',
-                action = '',
-                dest   = 2
-            )
-        ]
-    ),
-    dict(
-        name   = 'RESP_PROC',
-        left   = 3,
-        right  = 8,
-        id     = 1,
-        entry  = '_melo_frame_handler(&(recv_frame.frame), false);',
-        during = '',
-        exit   = '',
-        timer  = True,
-        parent = 1,
-        transitions = [
-            dict(
-                gaurd  = 'AFTER(500)',
-                action = '',
-                dest   = 0
-            )
-        ]
-    ),
-    dict(
-        name   = 'RESP_PEND',
-        left   = 4,
-        right  = 5,
-        id     = 2,
-        entry  = 'MeloTransmitBytes( &(wait_frame.buffer.data[0]), wait_frame.buffer.length );',
-        during = '',
-        exit   = '',
-        timer  = False,
-        parent = 1,
-        transitions = [
-            dict(
-                gaurd  = 'event == MELO_EVENT_REQUEST_RECEIVED',
-                action = '',
-                dest   = 2
-            ),
-            dict(
-                gaurd  = 'event == MELO_EVNET_TX_CONFIRMATION',
-                action = '',
-                dest   = 3
-            )
-        ]
-    ),
-    dict(
-        name   = 'TX_PEND',
-        left   = 6,
-        right  = 7,
-        id     = 3,
-        parent = 1,
-        entry  = 'MeloTransmitBytes( &(send_frame.buffer.data[0]), send_frame.buffer.length );',
-        during = '',
-        exit   = '',
-        timer  = False,
-        transitions = [
-            dict(
-                gaurd  = 'event == MELO_EVENT_REQUEST_RECEIVED',
-                action = '',
-                dest   = 3
-            ),
-            dict(
-                gaurd  = 'event == MELO_EVNET_TX_CONFIRMATION',
-                action = '',
-                dest   = 0
-            )
-        ]
-    )
-]
-
-#with open('airy.yml', 'w') as outfile:
-#    outfile.write(yaml.dump(states, default_flow_style=True))
-
-
-
-#for key, value in yaml.load(open('airy.yml')).iteritems():
-#    print key, value
-
 def main(argv):
     inputfile  = ''
     outputfile = ''
+    statefile  = ''
     try:
-        opts, args = getopt.getopt(argv,"hi:o:",["ifile=","ofile="])
+        opts, args = getopt.getopt(argv,"hi:o:s:",["ifile=","ofile=","sfile="])
     except getopt.GetoptError:
-        print 'airy.py -i <inputfile> -o <outputfile>'
+        print 'airy.py -i <inputfile> -o <outputfile> -s <statefile>'
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print 'airy.py -i <inputfile> -o <outputfile>'
+            print 'airy.py -i <inputfile> -o <outputfile> -s <statefile>'
             sys.exit()
         elif opt in ("-i", "--ifile"):
             inputfile = arg
         elif opt in ("-o", "--ofile"):
             outputfile = arg
+        elif opt in ("-s", "--sfile"):
+            statefile = arg
     print 'Input file is "', inputfile
     print 'Output file is "', outputfile
+    print 'Satefile file is "', statefile
+
+    states = yaml.load( open(statefile) )
     
     lookup = TemplateLookup(directories=[ os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) ])
     template_file = Template(filename=inputfile, lookup=lookup)
