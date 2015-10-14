@@ -47,19 +47,25 @@ extern "C" {
 #endif
 
 #if (__bool_true_false_are_defined == 1)
+    /* Use C99 built-in bool*/
 #else
   #if defined(_WIN32) && !defined(__MINGW32__)
+    /* MS VS only supports C89 C, so define our own bool */
     #pragma once
 
-    #define false   0
-    #define true    1
+    #define false   0u
+    #define true    1u
     #define bool    int
   #else
-    typedef uint8_t        bool;
-    #define false          ( (bool) 0u     )
-    #define true           ( (bool) !false )
-  #endif
-#endif
+    #ifdef __cplusplus
+        /* Use built-in C++ bool */
+    #else
+        typedef uint8_t        bool;
+        #define false          ( (bool) 0u     )
+        #define true           ( (bool) !false )
+    #endif /* C++ */
+  #endif   /* C89 */
+#endif     /* C99 */
 
 typedef struct
 {
