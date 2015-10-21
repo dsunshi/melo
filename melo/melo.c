@@ -23,13 +23,28 @@
 #include "melo.h"
 #include "melo_priv.h"
 
+/*[[[cog
+import cog
+def MakoSafeBegin(str):
+    cog.out("<" + "%" + str + ">")
+def MakoSafeFinal(str):
+    cog.out("<" + "/%" + str + ">")
+def MakoSafeInclude(file):
+    MakoSafeBegin("include file=\"" + file + "\" /")
+    cog.out("\n")
+]]]*/
+/*[[[end]]]*/
+
 /******************************************************************************
 *                              Local Data Types                               *
 ******************************************************************************/
 /*[[[cog
 import cog
-cog.outl("<%def name=\"build_func_name(x)\"><%return defaults['state_prefix'] + x + defaults['state_suffix']%></%def>")
-cog.outl("<%include file=\"templates/types.tpl\" />")
+MakoSafeBegin("def name=\"build_func_name(x)\"")
+MakoSafeBegin("return defaults['state_prefix'] + x + defaults['state_suffix']%")
+MakoSafeFinal("def")
+cog.out("\n")
+MakoSafeInclude("templates/types.tpl")
 ]]]*/
 /*[[[end]]]*/
 
@@ -52,8 +67,7 @@ static bool     _service_read_write(const _m_packet * const request, _m_packet *
 static bool     _service_NULL(const _m_packet * const request, _m_packet * const response);
 
 /*[[[cog
-import cog
-cog.outl("<%include file=\"templates/prototypes.tpl\" />")
+MakoSafeInclude("templates/prototypes.tpl")
 ]]]*/
 /*[[[end]]]*/
 
@@ -61,8 +75,7 @@ cog.outl("<%include file=\"templates/prototypes.tpl\" />")
 *                               Local Variables                               *
 ******************************************************************************/
 /*[[[cog
-import cog
-cog.outl("<%include file=\"templates/variables.tpl\" />")
+MakoSafeInclude("templates/variables.tpl")
 ]]]*/
 /*[[[end]]]*/
 
@@ -622,8 +635,7 @@ static void _melo_frame_handler(const _m_frame * const frame, const bool crc_pre
 
 /*[[[cog
 import cog
-cog.outl("<%include file=\"templates/builtins.tpl\" />")
-cog.outl("")
-cog.outl("<%include file=\"templates/states.tpl\" />")
+MakoSafeInclude("templates/builtins.tpl")
+MakoSafeInclude("templates/states.tpl")
 ]]]*/
 /*[[[end]]]*/
