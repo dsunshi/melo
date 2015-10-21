@@ -20,30 +20,14 @@ using std::cerr;
 using std::endl;
 using std::vector;
 
-void my_sleep(unsigned long milliseconds) {
-#ifdef _WIN32
-      Sleep(milliseconds); // 100 ms
-#else
-      usleep(milliseconds*1000); // 100 ms
-#endif
-}
+#define LINE_MAX 100
 
-void enumerate_ports()
-{
-	vector<serial::PortInfo> devices_found = serial::list_ports();
+static char line[LINE_MAX];
+serial::Serial my_serial;//("COM4", 9600, serial::Timeout::simpleTimeout(1000));
 
-	vector<serial::PortInfo>::iterator iter = devices_found.begin();
-
-	while( iter != devices_found.end() )
-	{
-		serial::PortInfo device = *iter++;
-
-		printf( "(%s, %s, %s)\n", device.port.c_str(), device.description.c_str(),
-     device.hardware_id.c_str() );
-	}
-}
-
-serial::Serial my_serial("COM4", 9600, serial::Timeout::simpleTimeout(1000));
+void print_header(void);
+unsigned int get_value(void);
+void comm_port(void);
 
 uint8_t * MeloCreatePointer( const uint32_t address )
 {
@@ -75,7 +59,7 @@ void MeloTransmitBytes( const uint8_t * const bytes, const uint8_t length )
 
 void MeloRequestBytes( const uint8_t num )
 {
-  printf("Requesting %d bytes from channel.\n", num);
+    printf("Requesting %d bytes from channel.\n", num);
     MeloTransmitComplete();
 }
 
@@ -136,49 +120,165 @@ uint8_t MeloWriteMemoryByAddress(uint8_t * buffer, const uint32_t address, const
     return MeloServiceRequestBuilder(buffer, 0, 2, &request, use_crc);
 }
 
-int main(int argc, char **argv) {
+void print_header(void)
+{
+    printf("-- Options --\n");
+    printf("0 - Read  Memory by Address\n");
+    printf("1 - Write Memory by Address\n");
+    printf("c - Comm Port Configuration\n");
+    printf("? - Help\n");
+    printf("x - eXit\n");
+    printf("-------------\n");
+}
+
+void comm_port(void)
+{
+    vector<serial::PortInfo> devices_found  = serial::list_ports();
+    vector<serial::PortInfo>::iterator iter = devices_found.begin();
+    uint8_t index = 0;
+    unsigned int value;
+    
+    printf("Available Devices: \n");
+    printf("-------------------\n");
+    
+    while( iter != devices_found.end() )
+    {
+        serial::PortInfo device = *iter++;
+
+        printf( "%d:\t %s, %s\n", index, device.port.c_str(), device.description.c_str() );
+        index++;
+    }
+    
+    printf("-------------------\n");
+    
+    printf("Select device (0 to %d): ", index - 1);
+    
+    if ( fgets(line, LINE_MAX, stdin) != NULL )
+    {
+        value = (unsigned int) atoi(line);
+        
+        for (iter = devices_found.begin(), index = 0; iter != devices_found.end();  index++)
+        {
+            serial::PortInfo device = *iter++;
+            
+            if ( index == value )
+            {
+                printf("Initializing %s ...\n", device.port.c_str());
+                
+                my_serial.setPort(device.port.c_str());
+                my_serial.setBaudrate(9600);
+                my_serial.setTimeout( serial::Timeout::simpleTimeout(1000) );
+                my_serial.open();
+                
+                if(my_serial.isOpen())
+                {
+                    printf("Serial port opened\n");
+                }
+                else
+                {
+                    printf("Failed to open port!\n");
+                }
+            }
+        }
+    }
+    else
+    {
+        
+    }
+}
+
+unsigned int get_value(void)
+{
+    unsigned int value;
+    
+    if ( fgets(line, LINE_MAX, stdin) != NULL )
+    {
+        value = (unsigned int) strtol(line, NULL, 16);
+        //printf("String value = %s, Int value = %d\n", line, value);
+    }
+    else
+    {
+        print_header();
+    }
+
+    return value;
+}
+
+int main(int argc, char** argv)
+{
+    char cmd;
+
+    unsigned int address;
+    unsigned int value;
+
     uint8_t tx_frame_buffer[30];
     uint8_t rx_frame_buffer[30];
     uint8_t frame_length;
-    uint32_t magic_addr = (uint32_t) 0x00800118uL;
-    
+
     MeloInit();
-    
-    printf("REad\n");
-    frame_length = MeloReadMemoryByAddress( &(tx_frame_buffer[0]), magic_addr, false);
-    
-    MeloTransmitBytes(tx_frame_buffer, frame_length);
-    
-    printf("Frame length: %d\n", frame_length);
 
-    my_serial.read(rx_frame_buffer, frame_length + 6);
-    
-    MeloReceiveBytes(rx_frame_buffer, frame_length + 6);
-    
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
-    
-    my_sleep(1000);
+    print_header();
 
-    printf("Write\n");
-    frame_length = MeloWriteMemoryByAddress( &(tx_frame_buffer[0]), magic_addr, 0xFFFFFFFF, false );
-    
-    printf("Frame length: %d\n", frame_length);
-    
-    MeloTransmitBytes(tx_frame_buffer, frame_length);
-    
-    my_serial.read(rx_frame_buffer, frame_length + 6);
-    
-    MeloReceiveBytes(rx_frame_buffer, frame_length + 6);
-    
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
-    MeloBackground();
+    printf("> ");
 
-  return 0;
+    while ( fgets(line, LINE_MAX, stdin) != NULL )
+    {
+        cmd = line[0];
+
+        if (cmd == '0')
+        {
+            printf("0 - Read  Memory by Address\n");
+            printf("---------------------------\n");
+            printf("Memory address (HEX):  ");
+            address = get_value();
+
+            frame_length = MeloReadMemoryByAddress( &(tx_frame_buffer[0]), (uint32_t) address, false);
+            MeloTransmitBytes(tx_frame_buffer, frame_length);
+            my_serial.read(rx_frame_buffer, frame_length + 6);
+            MeloReceiveBytes(rx_frame_buffer, frame_length + 6);
+
+            MeloBackground();
+            MeloBackground();
+            MeloBackground();
+            MeloBackground();
+        }
+        else if (cmd == '1')
+        {
+            printf("1 - Write Memory by Address\n");
+            printf("Memory address (HEX):  ");
+            address = get_value();
+            printf("Value to write (HEX):  ");
+            value   = get_value();
+
+            frame_length = MeloWriteMemoryByAddress( &(tx_frame_buffer[0]), (uint32_t) address, (uint32_t) value, false );
+            MeloTransmitBytes(tx_frame_buffer, frame_length);
+            my_serial.read(rx_frame_buffer, frame_length + 6);
+            MeloReceiveBytes(rx_frame_buffer, frame_length + 6);
+
+            MeloBackground();
+            MeloBackground();
+            MeloBackground();
+            MeloBackground();
+        }
+        else if ( (cmd == '?') || (cmd == '\n') )
+        {
+            print_header();
+        }
+        else if (cmd == 'c')
+        {
+            comm_port();
+        }
+        else if (cmd == 'x')
+        {
+            break;
+        }
+        else
+        {
+            printf("Unkown command: %c", cmd);
+        }
+
+        printf("> ");
+    }
+
+    return 0;
 }

@@ -2,8 +2,8 @@
 env = Environment()
 #env = Environment(tools = ['mingw'])
 
-target   = 'Example'
-sources  = ['serial_example.cc', 'serial.cc', 'impl/win.cc', 'impl/list_ports/list_ports_win.cc', './../melo/melo_full.c']
+target   = 'SimpleMeloTerm'
+sources  = ['serial_example.cc', 'serial.cc', 'impl/win.cc', 'impl/list_ports/list_ports_win.cc', './../melo/melo.c']
 libs     = ['setupapi.lib', 'ole32.lib', 'advapi32.lib']
 libpath  = ['lib/']
 includes = ['serial/', 'serial/impl', './../melo/']
