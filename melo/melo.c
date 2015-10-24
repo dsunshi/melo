@@ -55,7 +55,8 @@ static uint8_t  _get_event(void);
 static void     _init_event_stack(void);
 static void     _melo_create_cmd_byte(uint8_t * const b, const uint8_t cmd_type);
 static void     _melo_create_r(uint8_t * const b);
-static uint32_t _melo_esafe_uint(const uint8_t * const bytes, const uint8_t pe, const uint8_t he);
+static uint32_t _melo_esafe_uint32(const uint8_t * const bytes, const uint8_t pe, const uint8_t he);
+static uint16_t _melo_esafe_uint16(const uint8_t * const bytes, const uint8_t pe, const uint8_t he);
 static void     _melo_frame_handler(const _m_frame * const frame, const bool crc_present);
 static void     _melo_packet_handler(const _m_packet *packet);
 static void     _melo_restore_r(uint8_t * const b);
@@ -230,7 +231,7 @@ static void _notify_event(const uint8_t event)
     }
 }
 
-static uint32_t _melo_esafe_uint(const uint8_t * const bytes, const uint8_t pe, const uint8_t he)
+static uint32_t _melo_esafe_uint32(const uint8_t * const bytes, const uint8_t pe, const uint8_t he)
 {
     uint32_t result = 0;
 
@@ -252,6 +253,24 @@ static uint32_t _melo_esafe_uint(const uint8_t * const bytes, const uint8_t pe, 
     return result;
 }
 
+static uint16_t _melo_esafe_uint16(const uint8_t * const bytes, const uint8_t pe, const uint8_t he)
+{
+    uint16_t result = 0;
+
+    if ( pe == he )
+    {
+        result |= ( ((uint16_t) bytes[0])                    );
+        result |= ( ((uint16_t) bytes[1]) << ((uint8_t) 8u ) );
+    }
+    else
+    {
+        result |= ( ((uint16_t) bytes[1])                    );
+        result |= ( ((uint16_t) bytes[0]) << ((uint8_t) 8u ) );
+    }
+
+    return result;
+}
+
 static bool _service_read_write(const _m_packet * const request, _m_packet * const response)
 {
     bool result = true;
@@ -261,7 +280,7 @@ static bool _service_read_write(const _m_packet * const request, _m_packet * con
 
     if (request->command.fields.subfunction == 1u)
     {
-        address = _melo_esafe_uint( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+        address = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
         value   = MeloCreatePointer( address );
         
         response->data.length = 4u;
@@ -273,7 +292,7 @@ static bool _service_read_write(const _m_packet * const request, _m_packet * con
     }
     else if (request->command.fields.subfunction == 2u)
     {
-        address = _melo_esafe_uint( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+        address = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
         value   = MeloCreatePointer( address );
 
         response->data.length  = 1u;
