@@ -94,16 +94,16 @@ uint8_t MeloReadMemoryByAddress(uint8_t * buffer, const uint32_t address, const 
     data[3] = (address >> 24) & 0xFF;
    
     
-    return MeloServiceRequestBuilder(buffer, 0, 1, &request, use_crc);
+    return MeloServiceRequestBuilder(buffer, 0, 0, &request, use_crc);
 }
 
 uint8_t MeloWriteMemoryByAddress(uint8_t * buffer, const uint32_t address, const uint32_t value, const bool use_crc)
 {
     MeloList request;
-    uint8_t  data[8];
+    uint8_t  data[5];
     
     request.data   = data;
-    request.length = 8;
+    request.length = 5;
     
     /* Always this format - endianess/byte order is automatically accounted for! */
     data[0] = (address      ) & 0xFF;
@@ -112,12 +112,12 @@ uint8_t MeloWriteMemoryByAddress(uint8_t * buffer, const uint32_t address, const
     data[3] = (address >> 24) & 0xFF;
     
     data[4] = (value        ) & 0xFF;
-    data[5] = (value   >> 8 ) & 0xFF;
-    data[6] = (value   >> 16) & 0xFF;
-    data[7] = (value   >> 24) & 0xFF;
+    //data[5] = (value   >> 8 ) & 0xFF;
+    //data[6] = (value   >> 16) & 0xFF;
+    //data[7] = (value   >> 24) & 0xFF;
    
     
-    return MeloServiceRequestBuilder(buffer, 0, 2, &request, use_crc);
+    return MeloServiceRequestBuilder(buffer, 0, 4, &request, use_crc);
 }
 
 void print_header(void)
