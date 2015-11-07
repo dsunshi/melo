@@ -46,7 +46,39 @@ MakoSafeFinal("def")
 cog.out("\n")
 MakoSafeInclude("templates/types.tpl")
 ]]]*/
+
+#define _STATE_ACTION_ENTRY  ((uint8_t) 0u)
+#define _STATE_ACTION_DURING ((uint8_t) 1u)
+#define _STATE_ACTION_EXIT   ((uint8_t) 2u)
+#define _AFTER(x) x
+
+typedef uint16_t (*_state_func)(const uint8_t action, const uint8_t event);
+
+typedef struct
+{
+	_state_func  function;
+    uint8_t left;
+    uint8_t right;
+    uint16_t timer;
+} _state_handle;
 /*[[[end]]]*/
+
+typedef struct
+{
+    uint8_t size;
+    union
+    {
+        uint8_t    byte_val;
+        uint16_t   word_val;
+        uint32_t   dword_val;
+    };
+    union
+    {
+        uint8_t  * byte_ptr;
+        uint16_t * word_ptr;
+        uint32_t * dword_ptr;
+    };
+} _melo_data_ptr;
 
 /******************************************************************************
 *                          Local Function Prototypes                          *
@@ -58,7 +90,7 @@ static void     _melo_create_r(uint8_t * const b);
 static uint32_t _melo_esafe_uint32(const uint8_t * const bytes, const uint8_t pe, const uint8_t he);
 static uint16_t _melo_esafe_uint16(const uint8_t * const bytes, const uint8_t pe, const uint8_t he);
 static void     _melo_frame_handler(const _m_frame * const frame, const bool crc_present);
-static void     _melo_packet_handler(const _m_packet *packet);
+static void     _melo_packet_handler(const _m_packet * const packet);
 static void     _melo_restore_r(uint8_t * const b);
 static void     _melo_rx_byte(_m_frame_buffer * const frame_buffer, const uint8_t byte);
 static void     _melo_serialize_frame(_m_frame_buffer * const frame_buffer);
@@ -70,6 +102,17 @@ static bool     _service_NULL(const _m_packet * const request, _m_packet * const
 /*[[[cog
 MakoSafeInclude("templates/prototypes.tpl")
 ]]]*/
+
+
+/* States */
+static uint16_t _IDLE_(const uint8_t action, const uint8_t event);
+static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event);
+static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event);
+static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event);
+
+/* Builtin Functions */
+bool _is_parent(const _state_handle * const child, const _state_handle * const parent);
+uint16_t _state_transition(uint16_t start_state, uint16_t dest_state);
 /*[[[end]]]*/
 
 /******************************************************************************
@@ -78,6 +121,18 @@ MakoSafeInclude("templates/prototypes.tpl")
 /*[[[cog
 MakoSafeInclude("templates/variables.tpl")
 ]]]*/
+
+
+static _state_handle _table[4] =
+{
+    /* State Name, Left, Right, Timer */
+    /* 0 */ {_IDLE_, 1, 2, 0},
+    /* 1 */ {_RESP_PROC_, 3, 8, 0},
+    /* 2 */ {_RESP_PEND_, 4, 5, 0},
+    /* 3 */ {_TX_PEND_, 6, 7, 0},
+};
+
+static uint16_t _current_state = 0;
 /*[[[end]]]*/
 
 static uint8_t recv_frame_buffer[MELO_MAX_FRAME_SIZE]        = {0};
@@ -94,6 +149,14 @@ static _m_frame_buffer recv_frame;
 
 static uint8_t  _m_event_stack_data[MELO_CFG_MAX_STACK_SIZE] = {0};
 static MeloList _m_event_stack;
+
+static const uint8_t _m_size_lut[4] =
+{
+    1,  /*  0  */
+    2,  /*  1  */
+    4,  /*  2  */
+    0   /*  3  */
+};
 
 static const _m_service service_table[8] =
 {
@@ -273,34 +336,89 @@ static uint16_t _melo_esafe_uint16(const uint8_t * const bytes, const uint8_t pe
 
 static bool _service_read_write(const _m_packet * const request, _m_packet * const response)
 {
-    bool result = true;
-    const uint8_t * value;
-    uint32_t address;
-    uint8_t  index;
+    bool      result = true;
+    uint8_t * address_ptr;
+    uint32_t  address;
+    uint8_t   index;
+    uint8_t   size;
+    uint8_t   value8;
+    uint16_t  value16;
+    uint32_t  value32;
+    uint8_t * value;
+    
+    _melo_data_ptr data_ptr;
 
-    if (request->command.fields.subfunction == 1u)
-    {
-        address = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
-        value   = MeloCreatePointer( address );
-        
-        response->data.length = 4u;
-        
-        for (index = 0; index < response->data.length; index++)
-        {
-            response->data.data[index] = value[index];
-        }
-    }
-    else if (request->command.fields.subfunction == 2u)
-    {
-        address = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
-        value   = MeloCreatePointer( address );
+    address     = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+    address_ptr = MeloCreatePointer( address );
+    size        = request->command.fields.subfunction & 0x03;
 
-        response->data.length  = 1u;
-        response->data.data[0] = *value;
+    if (size == 0)
+    {
+        /* 0 : uint8_t - 1 byte */
+        size  = 1;
     }
     else
     {
-        result = false;
+        /*
+            1 : uint16_t - 2 bytes
+            2 : uint32_t - 4 bytes
+        */
+        size <<= 1;
+    }
+    
+    data_ptr.size = size;
+
+    if ( (request->command.fields.subfunction & 0x04) == 0x04)
+    {
+        /* Write */
+        if (size <= 4)
+        {
+            /* Write a uint8_t, uint16_t or uint32_t */
+            if (size == 1)
+            {
+                data_ptr.byte_val = request->data.data[4];
+                *address_ptr      = data_ptr.byte_val;
+            }
+            else if (size == 2)
+            {
+                data_ptr.word_val    = _melo_esafe_uint16( &(request->data.data[4]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+                data_ptr.word_ptr    = (uint16_t *) address_ptr;
+                *(data_ptr.word_ptr) = data_ptr.word_val;
+            }
+            else
+            {
+                data_ptr.dword_val    = _melo_esafe_uint32( &(request->data.data[4]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+                data_ptr.dword_ptr    = (uint32_t *) address_ptr;
+                *(data_ptr.dword_ptr) = data_ptr.dword_val;
+            }
+
+            response->data.length  = 1;
+            response->data.data[0] = 0xFF;
+        }
+        else
+        {
+            /* 3: unit8_t * n - n byte(s)  */
+            result = false;
+        }
+    }
+    else
+    {
+        /* Read */
+        if (size <= 4)
+        {
+            /* Read a uint8_t, uint16_t or uint32_t */
+            response->data.length = size;
+
+            for (index = 0; index < response->data.length; index++)
+            {
+                response->data.data[index] = address_ptr[index];
+            }
+        }
+        else
+        {
+            /* 3: unit8_t * n - n byte(s) */
+            result = false;
+        }
     }
 
     return result;
@@ -657,4 +775,188 @@ import cog
 MakoSafeInclude("templates/builtins.tpl")
 MakoSafeInclude("templates/states.tpl")
 ]]]*/
+bool _is_parent(const _state_handle * const child, const _state_handle * const parent)
+{
+    bool result = 0;
+    
+    if ( (parent->left < child->left) && (parent->right > child->right) )
+    {
+        result = true;
+    }
+    else
+    {
+        result = false;
+    }
+    
+    return result;
+}
+
+uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
+{
+    uint16_t index;
+    
+    /* Exit start_state */
+    (void) _table[start_state].function(_STATE_ACTION_EXIT, 0);
+    
+    for (index = start_state; index > 0; index--)
+    {
+        if (_is_parent( &(_table[start_state]), &(_table[index]) ) != false)
+        {
+            if (_is_parent( &(_table[dest_state]), &(_table[index]) ) == false)
+            {
+                (void) _table[index].function(_STATE_ACTION_EXIT, 0);
+            }
+            else
+            {
+                /* Do nothing - we are not actually exiting the parent state - only "touching" it */
+            }
+        }
+        else
+        {
+            /* Do nothing - not a parent state */
+        }
+    }
+    
+    for (index++; index <= dest_state; index++)
+    {
+        if (_is_parent( &(_table[dest_state]), &(_table[index]) ) != false)
+        {
+            if (_is_parent( &(_table[start_state]), &(_table[index]) ) == false)
+            {
+                (void) _table[index].function(_STATE_ACTION_ENTRY, 0);
+            }
+            else
+            {
+                /* Do nothing - we are not actually exiting the parent state - only "touching" it */
+            }
+        }
+        else
+        {
+            /* Do nothing - not a parent state */
+        }
+    }
+    
+    /* Enter dest_state */
+    (void) _table[dest_state].function(_STATE_ACTION_ENTRY, 0);
+    
+    return dest_state;
+}
+
+
+
+
+/* State IDLE */
+static uint16_t _IDLE_(const uint8_t action, const uint8_t event)
+{
+    uint16_t result = 0;
+    
+    if (action == _STATE_ACTION_ENTRY)
+    {
+    }
+    else if (action == _STATE_ACTION_DURING)
+    {
+        if (event == MELO_EVENT_REQUEST_RECEIVED)
+        {
+            result = _state_transition(0, 2);
+        }
+    }
+    else if (action == _STATE_ACTION_EXIT)
+    {
+    }
+    else
+    {
+        /* Error - ??? */
+    }
+    
+    return result;
+}
+/* State RESP_PROC */
+static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event)
+{
+    uint16_t result = 1;
+    
+    if (action == _STATE_ACTION_ENTRY)
+    {
+        _table[1].timer = 0;
+        _melo_frame_handler(&(recv_frame.frame), false);
+    }
+    else if (action == _STATE_ACTION_DURING)
+    {
+        _table[1].timer++;
+        if (_table[1].timer > _AFTER(500))
+        {
+            result = _state_transition(1, 0);
+        }
+    }
+    else if (action == _STATE_ACTION_EXIT)
+    {
+    }
+    else
+    {
+        /* Error - ??? */
+    }
+    
+    return result;
+}
+/* State RESP_PEND */
+static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event)
+{
+    uint16_t result = 2;
+    
+    if (action == _STATE_ACTION_ENTRY)
+    {
+        MeloTransmitBytes( &(wait_frame.buffer.data[0]), wait_frame.buffer.length );
+    }
+    else if (action == _STATE_ACTION_DURING)
+    {
+        (void) _table[1].function(_STATE_ACTION_DURING, event);
+        if (event == MELO_EVENT_REQUEST_RECEIVED)
+        {
+        }
+        if (event == MELO_EVNET_TX_CONFIRMATION)
+        {
+            result = _state_transition(2, 3);
+        }
+    }
+    else if (action == _STATE_ACTION_EXIT)
+    {
+    }
+    else
+    {
+        /* Error - ??? */
+    }
+    
+    return result;
+}
+/* State TX_PEND */
+static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event)
+{
+    uint16_t result = 3;
+    
+    if (action == _STATE_ACTION_ENTRY)
+    {
+        MeloTransmitBytes( &(send_frame.buffer.data[0]), send_frame.buffer.length );
+    }
+    else if (action == _STATE_ACTION_DURING)
+    {
+        (void) _table[1].function(_STATE_ACTION_DURING, event);
+        if (event == MELO_EVENT_REQUEST_RECEIVED)
+        {
+        }
+        if (event == MELO_EVNET_TX_CONFIRMATION)
+        {
+            result = _state_transition(3, 0);
+        }
+    }
+    else if (action == _STATE_ACTION_EXIT)
+    {
+    }
+    else
+    {
+        /* Error - ??? */
+    }
+    
+    return result;
+}
+
 /*[[[end]]]*/
