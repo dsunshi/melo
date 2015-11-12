@@ -33,6 +33,9 @@ extern "C" {
 #define MELO_CFG_MAX_DATA_LENGTH       100
 #define MELO_CFG_MAX_STACK_SIZE        5
 
+#define MELO_CFG_MODE_SLAVE
+/* #define MELO_CFG_MODE_MASTER */
+
 /*#define MELO_CFG_BIG_ENDIAN */
 /* #define MELO_CFG_LITTLE_ENDIAN */
 

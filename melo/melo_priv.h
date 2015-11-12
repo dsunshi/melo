@@ -120,6 +120,13 @@ typedef struct
 #define EVENT_DO_NOTHING               3u
 #define NUM_EVENTS                     4u
 
+#define MELO_WRITE_BY_ADDR_MASK        0x04
+#define MELO_RW_SIZE_REQ_MASK          0x03
+#define MELO_RW_SIZE_OF_BYTE           1u
+#define MELO_RW_SIZE_OF_WORD           2u
+#define MELO_RW_SIZE_OF_DWORD          4u
+#define MELO_SIZE_OF_MEM_ADDR          4u
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

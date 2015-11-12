@@ -150,14 +150,6 @@ static _m_frame_buffer recv_frame;
 static uint8_t  _m_event_stack_data[MELO_CFG_MAX_STACK_SIZE] = {0};
 static MeloList _m_event_stack;
 
-static const uint8_t _m_size_lut[4] =
-{
-    1,  /*  0  */
-    2,  /*  1  */
-    4,  /*  2  */
-    0   /*  3  */
-};
-
 static const _m_service service_table[8] =
 {
     /* 0 */ _service_read_write,
@@ -193,6 +185,7 @@ void MeloReceiveByte( const uint8_t byte )
     _melo_rx_byte( &recv_frame, byte );
 }
 
+#ifdef MELO_CFG_MODE_MASTER
 uint8_t MeloServiceRequestBuilder(uint8_t * buffer, const uint8_t service, const uint8_t subfunction, const MeloList * const request_data, const bool use_crc)
 {
     _m_frame_buffer tx_frame;
@@ -212,7 +205,9 @@ uint8_t MeloServiceRequestBuilder(uint8_t * buffer, const uint8_t service, const
     
     return tx_frame.buffer.length;
 }
+#endif
 
+#ifndef MELO_COMPILE_TIME_ENDIAN
 uint8_t MeloGetEndianess(void)
 {
     /* MISRA deviation: MISRA 2012 Rule 1.3
@@ -235,6 +230,7 @@ uint8_t MeloGetEndianess(void)
     
     return result;
 }
+#endif
 
 void MeloInit(void)
 {
@@ -336,64 +332,56 @@ static uint16_t _melo_esafe_uint16(const uint8_t * const bytes, const uint8_t pe
 
 static bool _service_read_write(const _m_packet * const request, _m_packet * const response)
 {
-    bool      result = true;
-    uint8_t * address_ptr;
-    uint32_t  address;
-    uint8_t   index;
-    uint8_t   size;
-    uint8_t   value8;
-    uint16_t  value16;
-    uint32_t  value32;
-    uint8_t * value;
-    
-    _melo_data_ptr data_ptr;
+    bool            result = true;
+    uint8_t       * address_ptr;
+    uint32_t        address;
+    uint8_t         index;
+    _melo_data_ptr  data_ptr;
 
-    address     = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
-    address_ptr = MeloCreatePointer( address );
-    size        = request->command.fields.subfunction & 0x03;
+    address       = _melo_esafe_uint32( &(request->data.data[0]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+    address_ptr   = MeloCreatePointer( address );
+    data_ptr.size = request->command.fields.subfunction & MELO_RW_SIZE_REQ_MASK;
 
-    if (size == 0)
+    if (data_ptr.size == 0)
     {
-        /* 0 : uint8_t - 1 byte */
-        size  = 1;
+        /* 0 : uint8_t -> 1 byte */
+        data_ptr.size  = 1;
     }
     else
     {
         /*
-            1 : uint16_t - 2 bytes
-            2 : uint32_t - 4 bytes
+            1 : uint16_t -> 2 bytes
+            2 : uint32_t -> 4 bytes
         */
-        size <<= 1;
+        data_ptr.size <<= 1;
     }
-    
-    data_ptr.size = size;
 
-    if ( (request->command.fields.subfunction & 0x04) == 0x04)
+    if ( (request->command.fields.subfunction & MELO_WRITE_BY_ADDR_MASK) == MELO_WRITE_BY_ADDR_MASK)
     {
         /* Write */
-        if (size <= 4)
+        if (data_ptr.size <= MELO_RW_SIZE_OF_DWORD)
         {
             /* Write a uint8_t, uint16_t or uint32_t */
-            if (size == 1)
+            if (data_ptr.size == MELO_RW_SIZE_OF_BYTE)
             {
-                data_ptr.byte_val = request->data.data[4];
+                data_ptr.byte_val = request->data.data[MELO_SIZE_OF_MEM_ADDR];
                 *address_ptr      = data_ptr.byte_val;
             }
-            else if (size == 2)
+            else if (data_ptr.size == MELO_RW_SIZE_OF_WORD)
             {
-                data_ptr.word_val    = _melo_esafe_uint16( &(request->data.data[4]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+                data_ptr.word_val    = _melo_esafe_uint16( &(request->data.data[MELO_SIZE_OF_MEM_ADDR]), MELO_CFG_PE_ENDIANESS, request->byte_order );
                 data_ptr.word_ptr    = (uint16_t *) address_ptr;
                 *(data_ptr.word_ptr) = data_ptr.word_val;
             }
             else
             {
-                data_ptr.dword_val    = _melo_esafe_uint32( &(request->data.data[4]), MELO_CFG_PE_ENDIANESS, request->byte_order );
+                data_ptr.dword_val    = _melo_esafe_uint32( &(request->data.data[MELO_SIZE_OF_MEM_ADDR]), MELO_CFG_PE_ENDIANESS, request->byte_order );
                 data_ptr.dword_ptr    = (uint32_t *) address_ptr;
                 *(data_ptr.dword_ptr) = data_ptr.dword_val;
             }
 
             response->data.length  = 1;
-            response->data.data[0] = 0xFF;
+            response->data.data[0] = 0x45;
         }
         else
         {
@@ -404,10 +392,10 @@ static bool _service_read_write(const _m_packet * const request, _m_packet * con
     else
     {
         /* Read */
-        if (size <= 4)
+        if (data_ptr.size <= MELO_RW_SIZE_OF_DWORD)
         {
             /* Read a uint8_t, uint16_t or uint32_t */
-            response->data.length = size;
+            response->data.length = data_ptr.size;
 
             for (index = 0; index < response->data.length; index++)
             {

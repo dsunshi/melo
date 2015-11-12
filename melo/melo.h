@@ -91,6 +91,8 @@ typedef struct
 
 #ifndef MELO_CFG_PE_ENDIANESS
     #define MELO_CFG_PE_ENDIANESS MeloGetEndianess()
+#else
+    #define MELO_COMPILE_TIME_ENDIAN
 #endif
 
 /******************************************************************************
@@ -101,8 +103,14 @@ void    MeloInit(void);
 void    MeloTransmitComplete(void);
 void    MeloReceiveByte( const uint8_t byte );
 void    MeloReceiveBytes( const uint8_t * const bytes, const uint8_t num );
-uint8_t MeloServiceRequestBuilder(uint8_t * buffer, const uint8_t service, const uint8_t subfunction, const MeloList * const request_data, const bool use_crc );
+
+#ifndef MELO_COMPILE_TIME_ENDIAN
 uint8_t MeloGetEndianess(void);
+#endif
+
+#ifdef MELO_CFG_MODE_MASTER
+uint8_t MeloServiceRequestBuilder(uint8_t * buffer, const uint8_t service, const uint8_t subfunction, const MeloList * const request_data, const bool use_crc );
+#endif
 
 /******************************************************************************
 *                       Application Function Prototypes                       *
