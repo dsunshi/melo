@@ -7,7 +7,9 @@ sources  = ['serial_example.cc', 'serial.cc', 'impl/win.cc', 'impl/list_ports/li
 libs     = ['setupapi.lib', 'ole32.lib', 'advapi32.lib']
 libpath  = ['lib/']
 includes = ['serial/', 'serial/impl', './../melo/']
+defines  = ['MELO_CFG_MODE_MASTER']
 
+env.Append(CPPDEFINES = defines)
 #env['CCFLAGS'] = '-g'
 
 env.Program(target = target, source = sources, CPPPATH = includes , LIBS = libs, LIBPATH = libpath)
