@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2015 David Sunshine, <http://sunshin.es>
- * 
+ *
  * This file is part of melo.
- * 
+ *
  * melo is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * melo is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with melo.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -189,20 +189,20 @@ void MeloReceiveByte( const uint8_t byte )
 uint8_t MeloServiceRequestBuilder(uint8_t * buffer, const uint8_t service, const uint8_t subfunction, const MeloList * const request_data, const bool use_crc)
 {
     _m_frame_buffer tx_frame;
-    
+
     tx_frame.frame.packet.command.raw_byte           = 0x00;
     tx_frame.frame.packet.command.fields.service     = service;
     tx_frame.frame.packet.command.fields.subfunction = subfunction;
     tx_frame.frame.packet.command.fields.status      = MELO_CMD_REQUEST_RESPONSE;
     tx_frame.frame.packet.byte_order                 = MELO_CFG_PE_ENDIANESS;
-    
+
     tx_frame.buffer.data              = buffer;
     tx_frame.frame.packet.data.length = request_data->length;
     tx_frame.frame.packet.data.data   = request_data->data;
     tx_frame.crc_present              = use_crc;
-    
+
     _melo_serialize_frame( &tx_frame );
-    
+
     return tx_frame.buffer.length;
 }
 #endif
@@ -216,7 +216,7 @@ uint8_t MeloGetEndianess(void)
     const uint32_t         i = 1;
     const uint8_t  * const p = (const uint8_t  * const) &i;
     /* End of MISRA deviation */
-    
+
     uint8_t   result;
 
     if (p[0] == 1)
@@ -227,7 +227,7 @@ uint8_t MeloGetEndianess(void)
     {
         result = MELO_BIG_ENDIAN;
     }
-    
+
     return result;
 }
 #endif
@@ -718,17 +718,23 @@ static void _melo_packet_handler(const _m_packet * const packet)
     else if (packet->command.fields.status == MELO_CMD_PENDING_RESPONSE)
     {
         /* Processing pending response */
+#ifdef MELO_CFG_MODE_MASTER
         MeloRequestBytes( packet->data.data[0] );
+#endif
     }
     else if (packet->command.fields.status == MELO_CMD_POSITIVE_RESPONSE)
     {
         /* Processing positive response */
+#ifdef MELO_CFG_MODE_MASTER
         MeloReceiveResponse(packet->command.fields.service, packet->command.fields.subfunction, &(packet->data.data[0]), packet->data.length, true);
+#endif
     }
     else if (packet->command.fields.status == MELO_CMD_NEGATIVE_RESPONSE)
     {
         /* Processing negative response */
+#ifdef MELO_CFG_MODE_MASTER
         MeloReceiveResponse(packet->command.fields.service, packet->command.fields.subfunction, &(packet->data.data[0]), packet->data.length, false);
+#endif
     }
     else
     {
@@ -766,7 +772,7 @@ MakoSafeInclude("templates/states.tpl")
 bool _is_parent(const _state_handle * const child, const _state_handle * const parent)
 {
     bool result = 0;
-    
+
     if ( (parent->left < child->left) && (parent->right > child->right) )
     {
         result = true;
@@ -775,17 +781,17 @@ bool _is_parent(const _state_handle * const child, const _state_handle * const p
     {
         result = false;
     }
-    
+
     return result;
 }
 
 uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
 {
     uint16_t index;
-    
+
     /* Exit start_state */
     (void) _table[start_state].function(_STATE_ACTION_EXIT, 0);
-    
+
     for (index = start_state; index > 0; index--)
     {
         if (_is_parent( &(_table[start_state]), &(_table[index]) ) != false)
@@ -804,7 +810,7 @@ uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
             /* Do nothing - not a parent state */
         }
     }
-    
+
     for (index++; index <= dest_state; index++)
     {
         if (_is_parent( &(_table[dest_state]), &(_table[index]) ) != false)
@@ -823,10 +829,10 @@ uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
             /* Do nothing - not a parent state */
         }
     }
-    
+
     /* Enter dest_state */
     (void) _table[dest_state].function(_STATE_ACTION_ENTRY, 0);
-    
+
     return dest_state;
 }
 
@@ -837,7 +843,7 @@ uint16_t _state_transition(uint16_t start_state, uint16_t dest_state)
 static uint16_t _IDLE_(const uint8_t action, const uint8_t event)
 {
     uint16_t result = 0;
-    
+
     if (action == _STATE_ACTION_ENTRY)
     {
     }
@@ -855,14 +861,14 @@ static uint16_t _IDLE_(const uint8_t action, const uint8_t event)
     {
         /* Error - ??? */
     }
-    
+
     return result;
 }
 /* State RESP_PROC */
 static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event)
 {
     uint16_t result = 1;
-    
+
     if (action == _STATE_ACTION_ENTRY)
     {
         _table[1].timer = 0;
@@ -883,14 +889,14 @@ static uint16_t _RESP_PROC_(const uint8_t action, const uint8_t event)
     {
         /* Error - ??? */
     }
-    
+
     return result;
 }
 /* State RESP_PEND */
 static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event)
 {
     uint16_t result = 2;
-    
+
     if (action == _STATE_ACTION_ENTRY)
     {
         MeloTransmitBytes( &(wait_frame.buffer.data[0]), wait_frame.buffer.length );
@@ -913,14 +919,14 @@ static uint16_t _RESP_PEND_(const uint8_t action, const uint8_t event)
     {
         /* Error - ??? */
     }
-    
+
     return result;
 }
 /* State TX_PEND */
 static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event)
 {
     uint16_t result = 3;
-    
+
     if (action == _STATE_ACTION_ENTRY)
     {
         MeloTransmitBytes( &(send_frame.buffer.data[0]), send_frame.buffer.length );
@@ -943,7 +949,7 @@ static uint16_t _TX_PEND_(const uint8_t action, const uint8_t event)
     {
         /* Error - ??? */
     }
-    
+
     return result;
 }
 
